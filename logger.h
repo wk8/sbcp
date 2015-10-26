@@ -1,5 +1,7 @@
-#ifndef LOG_H
-#define LOG_H
+#ifndef LOGGER_H
+#define LOGGER_H
+
+// FIXME: stderr for >= WARNING, stdout for rest, as an option
 
 #include <sys/time.h>
 #include <unistd.h>
@@ -30,4 +32,4 @@ void free_logger(logger_t* logger);
 #define GENERATE_LOGLEVEL_FUNCTION_DECLARATION(LEVEL, FUN_NAME) void FUN_NAME(logger_t* logger, const char* format, ...);
 FOREACH_LOGLEVEL(GENERATE_LOGLEVEL_FUNCTION_DECLARATION)
 
-#endif /* LOG_H */
+#endif /* LOGGER_H */
