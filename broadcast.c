@@ -60,6 +60,8 @@ void broadcast_listen(logger_t* logger)
   }
 
   // no longer needed
+  // TODO wkpo pas safe ca. goto exit, properly,
+  // in all error cases above, and close socket too
   freeaddrinfo(bcast_address);
 
   // now we can listen for incoming pings
@@ -88,7 +90,57 @@ void broadcast_listen(logger_t* logger)
   }
 }
 
-void broadcast_emit(logger_t* logger)
+// broadcasts the TCP port on the subnet
+void broadcast_emit(logger_t* logger, uint16_t tcp_port)
 {
-  
+  int sock_fd, bytes_sent_count, sock_optval, error_code;
+  struct sockaddr_in addr_in;
+  // TODO wkpo not thread safe, and deprecated; replace with
+  // getaddrinfo (and don't forget to freeaddrinfo afterwards)
+  struct hostent* hostent;
+  char buffer[PACKET_LEN];
+  uint32_t ping_code_verif = 2093727718;
+
+  // retrieve host info for broadcast packets
+  hostent = gethostbyname("255.255.255.255");
+  if (hostent == NULL) {
+    fatal(logger, "emit: could not get host info");
+    exit(1);
+  }
+
+  // create the socket
+  sock_fd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (sock_fd == -1) {
+    fatal(logger, "emit: failed to create socket fd");
+    exit(1);
+  }
+
+  // set the right sock options to send broadcast packets
+  error_code = setsockopt(sock_fd, SOL_SOCKET, SO_BROADCAST, &sock_optval,
+                          sizeof(int));
+  if (error_code == -1) {
+    fatal(logger, "emit: setsockopt (SO_BROADCAST)");
+    exit(1);
+  }
+
+  // set address options
+  memset(&addr_in, 0, sizeof(struct sockaddr_in));
+  addr_in.sin_family = AF_INET;
+  addr_in.sin_port = htons(BROADCAST_PORT);
+  addr_in.sin_addr = *((struct in_addr*) hostent->h_addr);
+
+  // prepare the packet to be sent
+  memcpy(&tcp_port, buffer, 2);
+  memcpy(&ping_code_verif, buffer + 2, 4);
+
+  // and send it!
+  bytes_sent_count = sendto(sock_fd, &buffer, PACKET_LEN, 0,
+                            (struct sockaddr*) &addr_in, sizeof(struct sockaddr_in));
+  if (bytes_sent_count != PACKET_LEN) {
+    fatal(logger, "emit: unable to send full packet, sent %d bytes", bytes_sent_count);
+    exit(1);
+  }
+  debug(logger, "emit: sent broadcast packet with TCP port %d", tcp_port);
+
+  close(sock_fd);
 }

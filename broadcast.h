@@ -1,16 +1,18 @@
 #ifndef BROADCAST_H
 #define BROADCAST_H
 
-#include <time.h>
-#include <sys/types.h>
-#include <sys/socket.h>
 #include <netdb.h>
+#include <netinet/in.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <time.h>
 
 #include "logger.h"
 
 // the 2 options below can be overriden at compile time
 // the default broadcast port
+// TODO wkpo amend the makefile for that
 #ifndef BROADCAST_PORT
 #define BROADCAST_PORT 28287
 #endif
@@ -25,6 +27,6 @@
 // listens for pings - this is blocking
 void broadcast_listen(logger_t* logger);
 // broadcasts a ping
-void broadcast_emit(logger_t* logger);
+void broadcast_emit(logger_t* logger, uint16_t tcp_port);
 
 #endif /* BROADCAST_H */

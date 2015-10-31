@@ -3,11 +3,11 @@
 
 // FIXME: stderr for >= WARNING, stdout for rest, as an option
 
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <sys/time.h>
 #include <unistd.h>
-#include <stdio.h>
-#include <stdarg.h>
-#include <stdlib.h>
 
 #define FOREACH_LOGLEVEL(LEVEL) \
         LEVEL(DEBUG, debug) \
