@@ -35,6 +35,7 @@ void broadcast_listen(logger_t* logger)
   }
 
   // loop through all the results and bind to the first we can
+  // TODO wkpo maybe we should broacast on all ifaces?
   for(; bcast_address != NULL; bcast_address = bcast_address->ai_next) {
     sock_fd = socket(bcast_address->ai_family, bcast_address->ai_socktype, bcast_address->ai_protocol);
     if (sock_fd == -1) {

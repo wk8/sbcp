@@ -1,8 +1,6 @@
 #ifndef LOGGER_H
 #define LOGGER_H
 
-// FIXME: stderr for >= WARNING, stdout for rest, as an option
-
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,6 +22,8 @@ typedef enum {
 typedef struct logger_t {
   FILE* file;
   log_level level;
+  int stdout_is_a_tty;
+  char* buffer;
 } logger_t;
 
 logger_t* init_logger(const char* log_file, const log_level level);
