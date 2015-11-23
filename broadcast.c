@@ -8,18 +8,23 @@
 // message longer than 2 + 4 = 6 bytes
 #define PACKET_LEN 6
 
+// a port can never be longer than 5 chars, +1 to NULL terminate
+#define PORT_STRING_LEN 6
+
 // FIXME: should we reset the socket every now and then?
 // in particular test with the computer going to sleep mode, and such
 void broadcast_listen(logger_t* logger)
 {
-  int sock_fd, error_code, bytes_received_count;
-  char buffer[PACKET_LEN + 1], port_string[6];
-  struct addrinfo hints, *bcast_address;
+  int sock_fd, socket_fds[FD_SETSIZE], socket_count = 0, highest_sock_fd = -1;
+  int i, error_code, bytes_received_count;
+  fd_set socket_fds_set;
+  char buffer[PACKET_LEN + 1], port_string[PORT_STRING_LEN], host_info[NI_MAXHOST + NI_MAXSERV + 2], host[NI_MAXHOST], service[NI_MAXSERV];
+  struct addrinfo hints, *address_list_head, *listen_address;
   struct sockaddr_storage their_address;
-  struct timespec wait_interval;
-  socklen_t their_address_len;
+  socklen_t my_addr_len, their_address_len;
   uint16_t their_tcp_port;
   uint32_t ping_code_verif;
+  size_t host_len;
 
   memset(&hints, 0, sizeof(struct addrinfo));
   // FIXME: actually test with ipv6
@@ -28,66 +33,98 @@ void broadcast_listen(logger_t* logger)
   hints.ai_flags = AI_PASSIVE; // wildcard IP address
 
   snprintf(port_string, 6, "%d", BROADCAST_PORT);
-  error_code = getaddrinfo(NULL, port_string, &hints, &bcast_address);
+  error_code = getaddrinfo(NULL, port_string, &hints, &address_list_head);
   if (error_code != 0) {
     fatal(logger, "listen: getaddrinfo: %s\n", gai_strerror(error_code));
     exit(1);
   }
 
-  // loop through all the results and bind to the first we can
-  // TODO wkpo maybe we should broacast on all ifaces?
-  for(; bcast_address != NULL; bcast_address = bcast_address->ai_next) {
-    sock_fd = socket(bcast_address->ai_family, bcast_address->ai_socktype, bcast_address->ai_protocol);
+  // loop through all the results and bind to all we can
+  for(listen_address = address_list_head; listen_address != NULL; listen_address = listen_address->ai_next) {
+    my_addr_len = sizeof(struct addrinfo);
+    error_code = getnameinfo(listen_address->ai_addr, my_addr_len,
+                             host, NI_MAXHOST,
+                             service, NI_MAXSERV, NI_NUMERICSERV);
+    if (error_code == 0) {
+      host_len = strlen(host);
+      memcpy(host_info, host, host_len);
+      memcpy(host_info + host_len, "/", 1);
+      memcpy(host_info + host_len + 1, service, strlen(service) + 1);
+    } else {
+      warning(logger, "listen: failed to get human-readable host info");
+      host_info[0] = '\0';
+    }
+
+    sock_fd = socket(listen_address->ai_family, listen_address->ai_socktype, listen_address->ai_protocol);
+    
     if (sock_fd == -1) {
-      debug(logger, "listen: failed to create socket fd");
+      warning(logger, "listen: failed to create socket fd for %s", host_info);
       continue;
     }
 
-    error_code = bind(sock_fd, bcast_address->ai_addr, bcast_address->ai_addrlen);
+    error_code = bind(sock_fd, listen_address->ai_addr, listen_address->ai_addrlen);
     if (error_code != 0) {
-      debug(logger, "listen: failed to bind: %d", error_code);
+      warning(logger, "listen: failed to bind to %s: %d", host_info, error_code);
       close(sock_fd);
       continue;
     }
 
     // success!
-    info(logger, "listen: successfully bound");
-    break;
-  }
-
-  if (bcast_address == NULL) {
-    fatal(logger, "listen: failed to bind socket");
-    exit(1);
+    info(logger, "listen: successfully bound to %s", host_info);
+    // add the socket FD to the set of FDs we'll watch
+    socket_fds[socket_count] = sock_fd;
+    socket_count++;
+    if (sock_fd > highest_sock_fd) {
+      highest_sock_fd = sock_fd;
+    }
   }
 
   // no longer needed
-  // TODO wkpo pas safe ca. goto exit, properly,
-  // in all error cases above, and close socket too
-  freeaddrinfo(bcast_address);
+  freeaddrinfo(address_list_head);
+
+  if (socket_count == 0) {
+    fatal(logger, "listen: failed to bind any socket");
+    exit(1);
+  }
 
   // now we can listen for incoming pings
   their_address_len = sizeof(struct sockaddr_storage);
-  wait_interval.tv_sec = 0;
-  wait_interval.tv_nsec = 100000000; // 0.1 sec
-  while (1) {
-    // FIXME wkpo: should really be a select...!! not this ugly polling
-    bytes_received_count = recvfrom(sock_fd, buffer, PACKET_LEN, 0,
-                                    (struct sockaddr*) &their_address, &their_address_len);
-
-    switch(bytes_received_count) {
-      case PACKET_LEN:
-        // TODO wkpo get the IP
-        memcpy(&their_tcp_port, buffer, 2);
-        memcpy(&ping_code_verif, buffer + 2, 4);
-        info(logger, "listen: received a ping from TODO wkpo with tcp_port: %d and code verif %d", their_tcp_port, ping_code_verif);
-        break;
-      case -1:
-        debug(logger, "listen: ignoring failed broadcast request");
-        break;
-      default:
-        debug(logger, "listen: received an unexpected broadcast packet of length");
+  while(1) {
+    // select modifies the fd_set in place, so we need to rebuild it every time
+    FD_ZERO(&socket_fds_set);
+    for (i = 0; i < socket_count; i++) {
+      FD_SET(socket_fds[i], &socket_fds_set);
     }
-    // TODO wkpo nanosleep(&wait_interval, NULL);
+
+    // then wait for someone to ping us!
+    error_code = select(highest_sock_fd + 1, &socket_fds_set, NULL, NULL, NULL);
+    if (error_code == -1) {
+      warning(logger, "listen: error while waiting for a ping: %d", errno);
+    } else {
+      debug(logger, "listen: select returned with %d", error_code);
+
+      for (i = 0; i < socket_count; i++) {
+        sock_fd = socket_fds[i];
+        if (FD_ISSET(sock_fd, &socket_fds_set)) {
+          bytes_received_count = recvfrom(sock_fd, buffer, PACKET_LEN, 0,
+                                          (struct sockaddr*) &their_address, &their_address_len);
+
+          switch(bytes_received_count) {
+            case PACKET_LEN:
+              // TODO wkpo get the IP
+              memcpy(&their_tcp_port, buffer, 2);
+              memcpy(&ping_code_verif, buffer + 2, 4);
+              info(logger, "listen: received a ping from TODO wkpo with tcp_port: %d and code verif %d", their_tcp_port, ping_code_verif);
+              break;
+            case -1:
+              warning(logger, "listen: ignoring failed broadcast request");
+              break;
+            default:
+              debug(logger, "listen: received an unexpected broadcast packet of length %d", bytes_received_count);
+          }
+        }
+      }
+    }
   }
 }
 
