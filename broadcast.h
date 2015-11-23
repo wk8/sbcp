@@ -2,6 +2,7 @@
 #define BROADCAST_H
 
 #include <errno.h>
+#include <inttypes.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <string.h>

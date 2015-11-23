@@ -137,7 +137,7 @@ void broadcast_emit(logger_t* logger, uint16_t tcp_port)
   // getaddrinfo (and don't forget to freeaddrinfo afterwards)
   struct hostent* hostent;
   char buffer[PACKET_LEN];
-  uint32_t ping_code_verif = 2093727718;
+  uint32_t ping_code_verif = PING_CODE;
 
   // retrieve host info for broadcast packets
   hostent = gethostbyname("255.255.255.255");
@@ -168,8 +168,8 @@ void broadcast_emit(logger_t* logger, uint16_t tcp_port)
   addr_in.sin_addr = *((struct in_addr*) hostent->h_addr);
 
   // prepare the packet to be sent
-  memcpy(&tcp_port, buffer, 2);
-  memcpy(&ping_code_verif, buffer + 2, 4);
+  memcpy(buffer, &tcp_port, 2);
+  memcpy(buffer + 2, &ping_code_verif, 4);
 
   // and send it!
   bytes_sent_count = sendto(sock_fd, &buffer, PACKET_LEN, 0,
@@ -178,7 +178,7 @@ void broadcast_emit(logger_t* logger, uint16_t tcp_port)
     fatal(logger, "emit: unable to send full packet, sent %d bytes", bytes_sent_count);
     exit(1);
   }
-  debug(logger, "emit: sent broadcast packet with TCP port %d", tcp_port);
+  debug(logger, "emit: sent broadcast packet with TCP port %"PRIu16, tcp_port);
 
   close(sock_fd);
 }

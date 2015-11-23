@@ -35,7 +35,8 @@ int main(int argc, char* argv[])
   } else if (strcmp(action, "ping") == 0) {
     debug(logger, "main: pinging current subnet");
     // FIXME: needs to be replaced too
-    broadcast_emit(logger, 28282);
+    uint16_t a=1234;
+    broadcast_emit(logger, a);
   } else {
     print_usage();
   }
