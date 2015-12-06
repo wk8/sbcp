@@ -7,6 +7,8 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+// FIXME: autoamtic strerror(errno) if errno is set (requires an audit of all func calls that can set errno to check we do handle them properly!)
+
 #define FOREACH_LOGLEVEL(LEVEL) \
         LEVEL(DEBUG, debug) \
         LEVEL(INFO, info) \

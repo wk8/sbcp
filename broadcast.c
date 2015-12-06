@@ -99,7 +99,7 @@ void broadcast_listen(logger_t* logger)
     // then wait for someone to ping us!
     error_code = select(highest_sock_fd + 1, &socket_fds_set, NULL, NULL, NULL);
     if (error_code == -1) {
-      warning(logger, "listen: error while waiting for a ping: %d", errno);
+      warning(logger, "listen: error while waiting for a ping: %s", strerror(errno));
     } else {
       debug(logger, "listen: select returned with %d", error_code);
 
@@ -129,56 +129,110 @@ void broadcast_listen(logger_t* logger)
 }
 
 // broadcasts the TCP port on the subnet
-void broadcast_emit(logger_t* logger, uint16_t tcp_port)
+// inspired from https://gist.github.com/neilalexander/3020008
+int broadcast_emit(logger_t* logger, uint16_t tcp_port)
 {
-  int sock_fd, bytes_sent_count, sock_optval, error_code;
-  struct sockaddr_in addr_in;
-  // TODO wkpo not thread safe, and deprecated; replace with
-  // getaddrinfo (and don't forget to freeaddrinfo afterwards)
-  struct hostent* hostent;
-  char buffer[PACKET_LEN];
+  struct ifaddrs *interface_list_head = NULL, *interface;
+  int error_code, sock_fd = -1, return_value = 0, sock_optval;
+  char buffer[PACKET_LEN], *iface_name;
   uint32_t ping_code_verif = PING_CODE;
+  ssize_t bytes_sent_count;
+  struct sockaddr_in send_addr, *iface_addr;
+  socklen_t send_addr_len;
 
-  // retrieve host info for broadcast packets
-  hostent = gethostbyname("255.255.255.255");
-  if (hostent == NULL) {
-    fatal(logger, "emit: could not get host info");
-    exit(1);
-  }
-
-  // create the socket
+  // create a raw socket
   sock_fd = socket(AF_INET, SOCK_DGRAM, 0);
   if (sock_fd == -1) {
-    fatal(logger, "emit: failed to create socket fd");
-    exit(1);
+    fatal(logger, "emit: failed to create socket fd: %s", strerror(errno));
+    goto fail;
   }
 
   // set the right sock options to send broadcast packets
   error_code = setsockopt(sock_fd, SOL_SOCKET, SO_BROADCAST, &sock_optval,
                           sizeof(int));
   if (error_code == -1) {
-    fatal(logger, "emit: setsockopt (SO_BROADCAST)");
-    exit(1);
+    fatal(logger, "emit: setsockopt (SO_BROADCAST): %s", strerror(errno));
+    goto fail;
   }
 
-  // set address options
-  memset(&addr_in, 0, sizeof(struct sockaddr_in));
-  addr_in.sin_family = AF_INET;
-  addr_in.sin_port = htons(BROADCAST_PORT);
-  addr_in.sin_addr = *((struct in_addr*) hostent->h_addr);
+  // get a list of all interfaces
+  error_code = getifaddrs(&interface_list_head);
+  if (error_code != 0) {
+    fatal(logger, "emit: could not list interfaces: %s", strerror(errno));
+    goto fail;
+  }
 
   // prepare the packet to be sent
   memcpy(buffer, &tcp_port, 2);
   memcpy(buffer + 2, &ping_code_verif, 4);
 
-  // and send it!
-  bytes_sent_count = sendto(sock_fd, &buffer, PACKET_LEN, 0,
-                            (struct sockaddr*) &addr_in, sizeof(struct sockaddr_in));
-  if (bytes_sent_count != PACKET_LEN) {
-    fatal(logger, "emit: unable to send full packet, sent %d bytes", bytes_sent_count);
-    exit(1);
-  }
-  debug(logger, "emit: sent broadcast packet with TCP port %"PRIu16, tcp_port);
+  // set address options
+  memset(&send_addr, 0, sizeof(struct sockaddr_in));
+  send_addr.sin_family = AF_INET;
+  send_addr.sin_port = htons(BROADCAST_PORT);
+  send_addr_len = sizeof(struct sockaddr_in);
 
-  close(sock_fd);
+  for(interface = interface_list_head; interface != NULL; interface = interface->ifa_next) {
+    iface_name = interface->ifa_name;
+    iface_addr = NULL;
+
+#ifdef __linux__
+    if (interface->ifa_flags & IFF_BROADCAST) {
+      iface_addr = (struct sockaddr_in*) interface->ifa_broadaddr;
+    } else if (interface->ifa_flags & IFF_POINTOPOINT) {
+      iface_addr = (struct sockaddr_in*) interface->ifa_dstaddr;
+    }
+#else
+    iface_addr = (struct sockaddr_in*) interface->ifa_dstaddr;
+#endif
+
+    if (iface_addr == NULL) {
+      debug(logger, "emit: iface %s does not define any iface address, skipping", iface_name);
+      continue;
+    }
+
+    if (iface_addr->sin_family != AF_INET) {
+      // FIXME: what about IPv6??
+      debug(logger, "emit: iface %s's address not an AF_INET, skipping", iface_name);
+      continue;
+    }
+
+    if (iface_addr->sin_addr.s_addr == 0) {
+      debug(logger, "emit: iface %s's address empty, skipping", iface_name);
+      continue;
+    }
+
+    // set the address
+    send_addr.sin_addr = iface_addr->sin_addr;
+
+    // send the packet!
+    bytes_sent_count = sendto(sock_fd, &buffer, PACKET_LEN, 0,
+                              (struct sockaddr*) &send_addr, send_addr_len);
+
+    if (bytes_sent_count == PACKET_LEN) {
+      debug(logger, "emit: successfully sent broadcast packet on iface %s with TCP port %"PRIu16,
+            iface_name, tcp_port);
+    } else if (bytes_sent_count == -1) {
+      error(logger, "emit: unable to send for iface %s: %s",
+            iface_name, strerror(errno));
+    } else {
+      // partially sent
+      error(logger, "emit: unable to send full packet for iface %s, sent %d bytes",
+            iface_name, bytes_sent_count);
+    }
+  }
+
+  goto cleanup;
+
+fail:
+  return_value = 1;
+
+cleanup:
+  if (sock_fd != -1) {
+    close(sock_fd);
+  }
+  if (interface_list_head != NULL) {
+    freeifaddrs(interface_list_head);
+  }
+  return return_value;
 }

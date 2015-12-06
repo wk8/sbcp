@@ -2,6 +2,7 @@
 #define BROADCAST_H
 
 #include <errno.h>
+#include <ifaddrs.h>
 #include <inttypes.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -10,6 +11,10 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <time.h>
+
+#ifdef __linux__
+#include <linux/if.h>
+#endif
 
 #include "logger.h"
 
@@ -29,7 +34,9 @@
 
 // listens for pings - this is blocking
 void broadcast_listen(logger_t* logger);
-// broadcasts a ping
-void broadcast_emit(logger_t* logger, uint16_t tcp_port);
+// broadcasts a ping on all interfaces
+// returns 0 iff successful
+// TODO wkpo don't ignore return value! make it bubble up
+int broadcast_emit(logger_t* logger, uint16_t tcp_port);
 
 #endif /* BROADCAST_H */

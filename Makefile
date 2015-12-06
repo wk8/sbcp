@@ -5,7 +5,13 @@ OBJECT_FILES = $(subst .h,.o,$(HEADER_FILES))
 
 GCC      = gcc
 CFLAGS   = -Wall
-OPTFLAGS = -O4
+OPTFLAGS = -O3
+
+ifneq ($(SBCP_DEBUG),)
+$(warning Building debug release)
+CFLAGS += -g
+OPTFLAGS =
+endif
 
 all: sbcp
 
