@@ -34,7 +34,7 @@ const char* level_name(const log_level level)
 
 void log_line(logger_t* logger, const log_level level, const char* format, va_list* args)
 {
-	struct timeval tv;
+  struct timeval tv;
   size_t current_length, remaining_space;
   int max_written_chars_count;
   char* buffer = logger->buffer;
@@ -45,7 +45,7 @@ void log_line(logger_t* logger, const log_level level, const char* format, va_li
   }
 
   // build the line
-	gettimeofday(&tv, NULL);
+  gettimeofday(&tv, NULL);
   max_written_chars_count = snprintf(buffer,
                                      LINE_MAX_LENGTH,
                                      "[ %lu-%lu (%d) ] %s: ",
@@ -62,7 +62,7 @@ void log_line(logger_t* logger, const log_level level, const char* format, va_li
   }
   current_length = max_written_chars_count;
   remaining_space = LINE_MAX_LENGTH - current_length,
-	max_written_chars_count = vsnprintf(buffer + current_length,
+  max_written_chars_count = vsnprintf(buffer + current_length,
                                       remaining_space,
                                       format,
                                       *args);
@@ -85,7 +85,7 @@ void log_line(logger_t* logger, const log_level level, const char* format, va_li
   }
 
   // and write to file
-	fprintf(logger->file, buffer);
+  fprintf(logger->file, buffer);
   fflush(logger->file);
 }
 
