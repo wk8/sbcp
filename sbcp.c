@@ -7,6 +7,9 @@ void print_usage()
   exit(1);
 }
 
+// TODO wkpo
+// --config /path/to/config
+// /path1/to/share path/2/
 int main(int argc, char* argv[])
 {
   char* action;

@@ -1,5 +1,5 @@
-#ifndef BROADCAST_H
-#define BROADCAST_H
+#ifndef SBCP_BROADCAST_H
+#define SBCP_BROADCAST_H
 
 #include <errno.h>
 #include <ifaddrs.h>
@@ -21,15 +21,15 @@
 // the 2 options below can be overriden at compile time
 // the default broadcast port
 // TODO wkpo amend the makefile for that
-#ifndef BROADCAST_PORT
-#define BROADCAST_PORT 28287
+#ifndef SBCP_BROADCAST_PORT
+#define SBCP_BROADCAST_PORT 28287
 #endif
 // a unique code to verify sbcp pings
-// this is not a safety feature, mind you.
+// this is not a security feature, mind you.
 // must be a uint32_t
 // in particular, must stay below UINT32_MAX (i.e 4294967295)
-#ifndef PING_CODE
-#define PING_CODE 2093727718
+#ifndef SBCP_PING_CODE
+#define SBCP_PING_CODE 2093727718
 #endif
 
 // listens for pings - this is blocking
@@ -39,4 +39,4 @@ void broadcast_listen(logger_t* logger);
 // TODO wkpo don't ignore return value! make it bubble up
 int broadcast_emit(logger_t* logger, uint16_t tcp_port);
 
-#endif /* BROADCAST_H */
+#endif /* SBCP_BROADCAST_H */

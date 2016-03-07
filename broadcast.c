@@ -3,13 +3,24 @@
 // useful doc at http://man7.org/linux/man-pages/man3/getaddrinfo.3.html
 
 // ping packets consist solely of their TCP server's port number,
-// which is a uint16, followed by PING_CODE, which is
+// which is a uint16, followed by SBCP_PING_CODE, which is
 // a uint32, so we're never going to be interested in any
 // message longer than 2 + 4 = 6 bytes
 #define PACKET_LEN 6
 
 // a port can never be longer than 5 chars, +1 to NULL terminate
 #define PORT_STRING_LEN 6
+
+// get sockaddr, IPv4 or IPv6:
+// TODO wkpo needed?
+void *get_in_addr(struct sockaddr *sa)
+{
+  if (sa->sa_family == AF_INET) {
+    return &(((struct sockaddr_in*)sa)->sin_addr);
+  }
+
+  return &(((struct sockaddr_in6*)sa)->sin6_addr);
+}
 
 // FIXME: should we reset the socket every now and then?
 // in particular test with the computer going to sleep mode, and such
@@ -18,7 +29,7 @@ void broadcast_listen(logger_t* logger)
   int sock_fd, socket_fds[FD_SETSIZE], socket_count = 0, highest_sock_fd = -1;
   int i, error_code, bytes_received_count;
   fd_set socket_fds_set;
-  char buffer[PACKET_LEN + 1], port_string[PORT_STRING_LEN], host_info[NI_MAXHOST + NI_MAXSERV + 2], host[NI_MAXHOST], service[NI_MAXSERV];
+  char buffer[PACKET_LEN + 1], port_string[PORT_STRING_LEN], host_info[NI_MAXHOST + NI_MAXSERV + 2], host[NI_MAXHOST], service[NI_MAXSERV], their_ip[INET6_ADDRSTRLEN];
   struct addrinfo hints, *address_list_head, *listen_address;
   struct sockaddr_storage their_address;
   socklen_t my_addr_len, their_address_len;
@@ -32,7 +43,7 @@ void broadcast_listen(logger_t* logger)
   hints.ai_socktype = SOCK_DGRAM; // datagram socket
   hints.ai_flags = AI_PASSIVE; // wildcard IP address
 
-  snprintf(port_string, 6, "%d", BROADCAST_PORT);
+  snprintf(port_string, 6, "%d", SBCP_BROADCAST_PORT);
   error_code = getaddrinfo(NULL, port_string, &hints, &address_list_head);
   if (error_code != 0) {
     fatal(logger, "listen: getaddrinfo: %s\n", gai_strerror(error_code));
@@ -111,10 +122,12 @@ void broadcast_listen(logger_t* logger)
 
           switch(bytes_received_count) {
             case PACKET_LEN:
-              // TODO wkpo get the IP
               memcpy(&their_tcp_port, buffer, 2);
               memcpy(&ping_code_verif, buffer + 2, 4);
-              info(logger, "listen: received a ping from TODO wkpo with tcp_port: %d and code verif %d", their_tcp_port, ping_code_verif);
+              inet_ntop(their_address.ss_family,
+                        get_in_addr((struct sockaddr *)&their_address),
+                        their_ip, INET6_ADDRSTRLEN);
+              info(logger, "listen: received a ping from %s with tcp_port: %d and code verif %d", their_ip, their_tcp_port, ping_code_verif);
               break;
             case -1:
               warning(logger, "listen: ignoring failed broadcast request");
@@ -135,7 +148,7 @@ int broadcast_emit(logger_t* logger, uint16_t tcp_port)
   struct ifaddrs *interface_list_head = NULL, *interface;
   int error_code, sock_fd = -1, return_value = 0, sock_optval;
   char buffer[PACKET_LEN], *iface_name;
-  uint32_t ping_code_verif = PING_CODE;
+  uint32_t ping_code_verif = SBCP_PING_CODE;
   ssize_t bytes_sent_count;
   struct sockaddr_in send_addr, *iface_addr;
   socklen_t send_addr_len;
@@ -169,7 +182,7 @@ int broadcast_emit(logger_t* logger, uint16_t tcp_port)
   // set address options
   memset(&send_addr, 0, sizeof(struct sockaddr_in));
   send_addr.sin_family = AF_INET;
-  send_addr.sin_port = htons(BROADCAST_PORT);
+  send_addr.sin_port = htons(SBCP_BROADCAST_PORT);
   send_addr_len = sizeof(struct sockaddr_in);
 
   for(interface = interface_list_head; interface != NULL; interface = interface->ifa_next) {
